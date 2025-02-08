@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
-import { Plus, Trash2, Check, Wand2, Calendar, Tag, AlertTriangle, Sparkles, ChevronDown, Clock, X } from 'lucide-react';
+import { Plus, Trash2, Check, Wand2, Calendar, Tag, AlertTriangle, Sparkles, ChevronDown, Clock, X, Brain, Zap, BarChart, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function TodoList({ user }) {
@@ -14,6 +14,16 @@ export default function TodoList({ user }) {
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState('medium');
   const [category, setCategory] = useState('personal');
+  const [showAIAnalysis, setShowAIAnalysis] = useState(false);
+  const [aiAnalysis, setAIAnalysis] = useState(null);
+  const [analyzingTask, setAnalyzingTask] = useState(false);
+  const [optimizingSchedule, setOptimizingSchedule] = useState(false);
+  const [scheduleRecommendation, setScheduleRecommendation] = useState('');
+  const [editingTodo, setEditingTodo] = useState(null);
+  const [editedContent, setEditedContent] = useState('');
+  const [editedDueDate, setEditedDueDate] = useState('');
+  const [editedPriority, setEditedPriority] = useState('');
+  const [editedCategory, setEditedCategory] = useState('');
 
   const categories = ['personal', 'work', 'shopping', 'health'];
   const priorities = ['low', 'medium', 'high'];
@@ -172,6 +182,127 @@ export default function TodoList({ user }) {
     }
   };
 
+  const analyzeTaskWithAI = async (content) => {
+    setAnalyzingTask(true);
+    try {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': import.meta.env.VITE_GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `Analyze this task and provide insights in JSON format with the following structure:
+              {
+                "suggestedPriority": "high/medium/low",
+                "suggestedCategory": "work/personal/shopping/health",
+                "estimatedTimeToComplete": "string",
+                "suggestedDeadline": "string",
+                "subtasks": ["string"],
+                "tips": ["string"]
+              }
+              
+              Task: "${content}"`
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1000,
+          },
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to analyze task');
+      const data = await response.json();
+      const analysis = JSON.parse(data.candidates[0].content.parts[0].text);
+      setAIAnalysis(analysis);
+    } catch (error) {
+      console.error('Error analyzing task:', error);
+      alert('Failed to analyze task');
+    } finally {
+      setAnalyzingTask(false);
+    }
+  };
+
+  const optimizeSchedule = async () => {
+    setOptimizingSchedule(true);
+    try {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': import.meta.env.VITE_GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `Based on these tasks and their priorities, suggest an optimal schedule and task order. Consider deadlines, priorities, and dependencies:
+              Tasks: ${JSON.stringify(todos.map(t => ({
+                content: t.content,
+                priority: t.priority,
+                due_date: t.due_date,
+                category: t.category
+              })))}
+              
+              Provide a natural language response with scheduling recommendations.`
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1000,
+          },
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to optimize schedule');
+      const data = await response.json();
+      setScheduleRecommendation(data.candidates[0].content.parts[0].text);
+    } catch (error) {
+      console.error('Error optimizing schedule:', error);
+      alert('Failed to optimize schedule');
+    } finally {
+      setOptimizingSchedule(false);
+    }
+  };
+
+  const startEditing = (todo) => {
+    setEditingTodo(todo);
+    setEditedContent(todo.content);
+    setEditedDueDate(todo.due_date || '');
+    setEditedPriority(todo.priority);
+    setEditedCategory(todo.category);
+  };
+
+  const cancelEditing = () => {
+    setEditingTodo(null);
+    setEditedContent('');
+    setEditedDueDate('');
+    setEditedPriority('');
+    setEditedCategory('');
+  };
+
+  const saveEdit = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('todos')
+        .update({
+          content: editedContent.trim(),
+          due_date: editedDueDate || null,
+          priority: editedPriority,
+          category: editedCategory,
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      fetchTodos();
+      cancelEditing();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-4">
@@ -312,16 +443,62 @@ export default function TodoList({ user }) {
           </select>
         </motion.div>
 
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={getSuggestion}
-          className="inline-flex w-full items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.06)] ring-1 ring-inset ring-gray-200 transition-colors hover:bg-gray-50 dark:bg-black dark:text-white dark:shadow-[0_2px_8px_rgba(255,255,255,0.04)] dark:ring-white/10 dark:hover:bg-white/5 sm:w-auto"
-        >
-          <Sparkles className="mr-2 h-4 w-4 text-gray-500 dark:text-white/70" />
-          Get AI Suggestion
-        </motion.button>
+        <div className="flex flex-wrap gap-2">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={getSuggestion}
+            className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.06)] ring-1 ring-inset ring-gray-200 transition-colors hover:bg-gray-50 dark:bg-black dark:text-white dark:shadow-[0_2px_8px_rgba(255,255,255,0.04)] dark:ring-white/10 dark:hover:bg-white/5"
+          >
+            <Sparkles className="mr-2 h-4 w-4 text-gray-500 dark:text-white/70" />
+            Get AI Suggestion
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={optimizeSchedule}
+            disabled={optimizingSchedule || todos.length === 0}
+            className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.06)] ring-1 ring-inset ring-gray-200 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:bg-black dark:text-white dark:shadow-[0_2px_8px_rgba(255,255,255,0.04)] dark:ring-white/10 dark:hover:bg-white/5"
+          >
+            <Brain className="mr-2 h-4 w-4 text-gray-500 dark:text-white/70" />
+            {optimizingSchedule ? 'Optimizing...' : 'Optimize Schedule'}
+          </motion.button>
+        </div>
       </div>
+
+      <AnimatePresence>
+        {scheduleRecommendation && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mb-4 overflow-hidden rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 shadow-[0_4px_12px_rgba(0,0,0,0.12)] dark:from-purple-500 dark:to-indigo-500"
+          >
+            <div className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <BarChart className="h-5 w-5 text-white" />
+                  <h3 className="text-base font-semibold leading-6 text-white">
+                    Schedule Optimization
+                  </h3>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.1, rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setScheduleRecommendation('')}
+                  className="rounded-full p-1 text-white/70 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </motion.button>
+              </div>
+              <div className="mt-2 text-sm text-white">
+                {scheduleRecommendation}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showSuggestion && aiSuggestion && (
@@ -370,10 +547,7 @@ export default function TodoList({ user }) {
         )}
       </AnimatePresence>
 
-      <motion.div 
-        layout
-        className="space-y-2"
-      >
+      <motion.div layout className="space-y-2">
         <AnimatePresence mode="popLayout">
           {todos.map((todo) => (
             <motion.div
@@ -385,64 +559,161 @@ export default function TodoList({ user }) {
               whileHover={{ scale: 1.01 }}
               className="group relative overflow-hidden rounded-lg bg-white p-3 shadow-[0_4px_12px_rgba(0,0,0,0.08)] ring-1 ring-gray-900/5 transition-all hover:shadow-[0_6px_16px_rgba(0,0,0,0.12)] dark:bg-black dark:shadow-[0_4px_12px_rgba(255,255,255,0.06)] dark:ring-white/10 dark:hover:shadow-[0_6px_16px_rgba(255,255,255,0.08)]"
             >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <motion.button
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => toggleTodo(todo.id, todo.is_completed)}
-                  className={`flex h-6 w-6 items-center justify-center rounded-md border-2 transition-colors ${
-                    todo.is_completed
-                      ? 'border-white bg-white text-black dark:border-white dark:bg-white dark:text-black'
-                      : 'border-gray-300 dark:border-white/30'
-                  }`}
+              {editingTodo?.id === todo.id ? (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="space-y-3"
                 >
-                  {todo.is_completed && <Check className="h-4 w-4" />}
-                </motion.button>
-                
-                <div className="flex-1 space-y-1">
-                  <p
-                    className={`text-base text-gray-900 dark:text-white ${
-                      todo.is_completed ? 'line-through opacity-50' : ''
+                  <div className="flex flex-col gap-3">
+                    <input
+                      type="text"
+                      value={editedContent}
+                      onChange={(e) => setEditedContent(e.target.value)}
+                      className="w-full rounded-lg border-0 bg-gray-50 px-3 py-2 text-base text-gray-900 shadow-sm ring-1 ring-inset ring-gray-200 placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-gray-900 dark:bg-black dark:text-white dark:ring-white/10 dark:placeholder:text-gray-400 dark:focus:ring-white/30"
+                    />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="rounded-lg bg-gray-50 px-3 py-2 ring-1 ring-inset ring-gray-200 dark:bg-black dark:ring-white/10">
+                        <label className="block text-xs font-medium text-gray-500 dark:text-white/70">
+                          Due Date
+                        </label>
+                        <div className="flex items-center">
+                          <Calendar className="mr-2 h-4 w-4 text-gray-400 dark:text-white/50" />
+                          <input
+                            type="date"
+                            value={editedDueDate}
+                            onChange={(e) => setEditedDueDate(e.target.value)}
+                            className="block w-full border-0 bg-transparent p-0 text-gray-900 placeholder:text-gray-400 focus:ring-0 dark:text-white dark:placeholder:text-white/50 sm:text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-gray-50 px-3 py-2 ring-1 ring-inset ring-gray-200 dark:bg-black dark:ring-white/10">
+                        <label className="block text-xs font-medium text-gray-500 dark:text-white/70">
+                          Priority
+                        </label>
+                        <div className="flex items-center">
+                          <AlertTriangle className="mr-2 h-4 w-4 text-gray-400 dark:text-white/50" />
+                          <select
+                            value={editedPriority}
+                            onChange={(e) => setEditedPriority(e.target.value)}
+                            className="block w-full border-0 bg-transparent p-0 text-gray-900 placeholder:text-gray-400 focus:ring-0 dark:text-white dark:placeholder:text-white/50 sm:text-sm [&>option]:text-gray-900"
+                          >
+                            {priorities.map(p => (
+                              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-gray-50 px-3 py-2 ring-1 ring-inset ring-gray-200 dark:bg-black dark:ring-white/10">
+                        <label className="block text-xs font-medium text-gray-500 dark:text-white/70">
+                          Category
+                        </label>
+                        <div className="flex items-center">
+                          <Tag className="mr-2 h-4 w-4 text-gray-400 dark:text-white/50" />
+                          <select
+                            value={editedCategory}
+                            onChange={(e) => setEditedCategory(e.target.value)}
+                            className="block w-full border-0 bg-transparent p-0 text-gray-900 placeholder:text-gray-400 focus:ring-0 dark:text-white dark:placeholder:text-white/50 sm:text-sm [&>option]:text-gray-900"
+                          >
+                            {categories.map(c => (
+                              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={cancelEditing}
+                      className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                    >
+                      Cancel
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => saveEdit(todo.id)}
+                      className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
+                    >
+                      Save Changes
+                    </motion.button>
+                  </div>
+                </motion.div>
+              ) : (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => toggleTodo(todo.id, todo.is_completed)}
+                    className={`flex h-6 w-6 items-center justify-center rounded-md border-2 transition-colors ${
+                      todo.is_completed
+                        ? 'border-white bg-white text-black dark:border-white dark:bg-white dark:text-black'
+                        : 'border-gray-300 dark:border-white/30'
                     }`}
                   >
-                    {todo.content}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    {todo.due_date && (
-                      <span className="inline-flex items-center rounded-md bg-black/5 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10 dark:bg-white/5 dark:text-white/70 dark:ring-white/10">
-                        <Clock className="mr-1 h-3 w-3" />
-                        {new Date(todo.due_date).toLocaleDateString()}
+                    {todo.is_completed && <Check className="h-4 w-4" />}
+                  </motion.button>
+                  
+                  <div className="flex-1 space-y-1">
+                    <p
+                      className={`text-base text-gray-900 dark:text-white ${
+                        todo.is_completed ? 'line-through opacity-50' : ''
+                      }`}
+                    >
+                      {todo.content}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      {todo.due_date && (
+                        <span className="inline-flex items-center rounded-md bg-black/5 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10 dark:bg-white/5 dark:text-white/70 dark:ring-white/10">
+                          <Clock className="mr-1 h-3 w-3" />
+                          {new Date(todo.due_date).toLocaleDateString()}
+                        </span>
+                      )}
+                      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${getPriorityColor(todo.priority)}`}>
+                        {todo.priority}
                       </span>
-                    )}
-                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${getPriorityColor(todo.priority)}`}>
-                      {todo.priority}
-                    </span>
-                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${getCategoryColor(todo.category)}`}>
-                      {todo.category}
-                    </span>
+                      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${getCategoryColor(todo.category)}`}>
+                        {todo.category}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => rewriteTask(todo.id, todo.content)}
+                      disabled={rewritingId === todo.id}
+                      className="rounded-md p-2 text-gray-500 hover:bg-gray-50 hover:text-black dark:text-white/70 dark:hover:bg-white/5 dark:hover:text-white disabled:opacity-50"
+                      title="Rewrite with AI"
+                    >
+                      <Wand2 className={`h-4 w-4 ${rewritingId === todo.id ? 'animate-pulse' : ''}`} />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => startEditing(todo)}
+                      className="rounded-md p-2 text-gray-500 hover:bg-gray-50 hover:text-black dark:text-white/70 dark:hover:bg-white/5 dark:hover:text-white"
+                      title="Edit Task"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => deleteTodo(todo.id)}
+                      className="rounded-md p-2 text-gray-500 hover:bg-gray-50 hover:text-red-600 dark:text-white/70 dark:hover:bg-white/5 dark:hover:text-red-400"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </motion.button>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-1">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => rewriteTask(todo.id, todo.content)}
-                    disabled={rewritingId === todo.id}
-                    className="rounded-md p-2 text-gray-500 hover:bg-gray-50 hover:text-black dark:text-white/70 dark:hover:bg-white/5 dark:hover:text-white disabled:opacity-50"
-                    title="Rewrite with AI"
-                  >
-                    <Wand2 className={`h-4 w-4 ${rewritingId === todo.id ? 'animate-pulse' : ''}`} />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => deleteTodo(todo.id)}
-                    className="rounded-md p-2 text-gray-500 hover:bg-gray-50 hover:text-red-600 dark:text-white/70 dark:hover:bg-white/5 dark:hover:text-red-400"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </motion.button>
-                </div>
-              </div>
+              )}
             </motion.div>
           ))}
         </AnimatePresence>
